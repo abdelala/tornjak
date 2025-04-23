@@ -1,89 +1,94 @@
-# Tornjak simple deployment with SPIRE k8s quickstart
+# Tornjak Deployment with SPIRE on Kubernetes Quickstart
 
-In this tutorial, we will show how to configure Tornjak with a SPIRE deployment using the SPIRE k8s quickstart tutorial. This is heavily inspired by the [SPIRE quickstart for Kubernetes](https://spiffe.io/docs/latest/try/getting-started-k8s/).
+This tutorial demonstrates how to deploy [Tornjak](https://github.com/spiffe/tornjak) with [SPIRE](https://github.com/spiffe/spire) on a Kubernetes cluster using Minikube, inspired by the [SPIRE Quickstart for Kubernetes](https://spiffe.io/docs/latest/try/getting-started-k8s/). It covers setting up a local SPIRE server with a co-located Tornjak backend, deploying a SPIRE agent, and accessing the Tornjak API and optional frontend.
 
-Before we dive into the deployment process, let’s familiarize ourselves with Tornjak and SPIRE.
+## Overview
 
-[SPIRE](https://github.com/spiffe/spire) (the SPIFFE Runtime Environment) is an open-source software tool that provides a way to issue and manage identities in the form of SPIFFE IDs within a distributed system. These identities are used to establish trust between software services and are based on the SPIFFE (Secure Production Identity Framework For Everyone) standards, which define a universal identity control plane for distributed systems. SPIRE provides access to the SPIFFE Workload API, which authenticates active software systems and allocates SPIFFE IDs and corresponding SVIDs to them. This process enables mutual trust establishment between two distinct workloads.
+**SPIRE** (SPIFFE Runtime Environment) is an open-source tool for managing SPIFFE identities in distributed systems. It issues SPIFFE IDs and SVIDs (SPIFFE Verifiable Identity Documents) via the SPIFFE Workload API, enabling mutual trust between workloads.
 
-Tornjak is a control plane and GUI for SPIRE, aimed at managing SPIRE deployments across multiple clusters. It provides a management plane that simplifies and centralizes the administration of SPIRE, offering an intuitive interface for defining, distributing, and visualizing SPIFFE identities across a heterogeneous environment.
+**Tornjak** is a management plane and GUI for SPIRE, simplifying administration across multiple clusters with an intuitive interface for managing and visualizing SPIFFE identities.
 
-This tutorial will get you up and running with a local deployment of SPIRE and Tornjak in three simple steps:
-- Setting up the deployment files
-- Deployment
-- Connecting to Tornjak.
+This guide walks through:
+- Setting up prerequisites
+- Configuring deployment files
+- Deploying SPIRE and Tornjak
+- Accessing the Tornjak backend and optional frontend
+- Cleaning up resources
 
-Contents
-- [Step 0: Prerequisite](#step-0-prerequisite)
-- [Step 1: Setup Deployment files](#step-1-setup-deployment-files)
-- [Step 2: Deployment of SPIRE and co-located Tornjak](#step-2-deployment-of-spire-and-co-located-tornjak)
-- [Step 3: Configuring Access to Tornjak](#step-3-configuring-access-to-tornjak)
+## Contents
+- [Step 0: Prerequisites](#step-0-prerequisites)
+- [Step 1: Setup Deployment Files](#step-1-setup-deployment-files)
+- [Step 2: Deploy SPIRE and Tornjak](#step-2-deploy-spire-and-tornjak)
+- [Step 3: Access Tornjak](#step-3-access-tornjak)
 - [Cleanup](#cleanup)
-- [Troubleshooting Commmon Issues](#Troubleshooting)
+- [Troubleshooting](#troubleshooting)
 
-## Step 0: Prerequisite
+## Step 0: Prerequisites
 
-Before you begin this tutorial, make sure you have the following:
-- Minikube: Version 1.12.0 or later. [Download Minikube.](https://minikube.sigs.k8s.io/docs/start/)
-- Docker: Version 20.10.23 or later. [Install Docker.](https://docs.docker.com/get-docker/)
+Ensure you have the following installed:
+- **Minikube**: Version 1.33.0 or later. [Install Minikube](https://minikube.sigs.k8s.io/docs/start/).
+- **Docker**: Version 24.0.7 or later. [Install Docker](https://docs.docker.com/get-docker/).
+- **kubectl**: Compatible with Kubernetes 1.28 or later. [Install kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/).
+- **Git**: For cloning the Tornjak repository. [Install Git](https://git-scm.com/downloads).
 
-Note: While we have tested this tutorial with the versions below, newer versions should also work. Ensure you're using the most recent stable releases to avoid compatibility issues.
- - Minikube Version 1.12.0, Version 1.31.2
- - Docker Version 20.10.23, Version 24.0.6
+**Note**: This tutorial uses Minikube for simplicity, but you can adapt it for an existing Kubernetes cluster. Ensure Docker Desktop is running before starting Minikube.
 
-## Step 1: Setup deployment files
+## Step 1: Setup Deployment Files
 
-### Setting up k8s
+### Start Minikube
 
-For this tutorial, we will use minikube. If you have an existing kubernetes cluster, feel free to use that.
+Launch a Minikube cluster with the Docker driver:
 
-```console
-minikube start
+```bash
+minikube start --driver=docker
 ```
 
+Example output:
 ```
-😄  minikube v1.12.0 on Darwin 11.2
-🎉  minikube 1.18.1 is available! Download it: https://github.com/kubernetes/minikube/releases/tag/v1.18.1
-💡  To disable this notice, run: 'minikube config set WantUpdateNotification false'
-✨  Automatically selected the docker driver. Other choices: hyperkit, virtualbox
+😄  minikube v1.33.0 on Darwin 14.5
+✨  Using the docker driver
 👍  Starting control plane node minikube in cluster minikube
-🔥  Creating docker container (CPUs=2, Memory=1989MB) ...
-🐳  Preparing Kubernetes v1.18.3 on Docker 19.03.2 ...
+🔥  Creating docker container (CPUs=2, Memory=4000MB) ...
+🐳  Preparing Kubernetes v1.28.3 on Docker 24.0.7 ...
 🔎  Verifying Kubernetes components...
-🌟  Enabled addons: default-storageclass, storage-provisioner
-🏄  Done! kubectl is now configured to use "minikube"
+🌟  Enabled addons: storage-provisioner, default-storageclass
+🏄  Done! kubectl is now configured to use "minikube" cluster
 ```
 
-```console
+Verify the cluster is running:
+
+```bash
 kubectl get nodes
 ```
 
 ```
-NAME       STATUS   ROLES    AGE   VERSION
-minikube   Ready    master   79s   v1.18.3
+NAME       STATUS   ROLES           AGE   VERSION
+minikube   Ready    control-plane   2m    v1.28.3
 ```
 
-[Troubleshoot 1: Minikube fails to start with a Docker CLI context error](#troubleshooting)
-### Obtaining the Deployment Files
+If Minikube fails to start, see [Troubleshooting: Minikube Fails to Start](#troubleshooting).
 
-To obtain the relevant files, clone our git repository and cd into the correct directory:
+### Clone the Tornjak Repository
 
-```console
+Clone the Tornjak repository and navigate to the quickstart directory:
+
+```bash
 git clone https://github.com/spiffe/tornjak.git
-cd tornjak
-cd docs/quickstart
+cd tornjak/docs/quickstart
 ```
 
-Notice, the files in this directory are largely the same files as provided by the [SPIRE quickstart for Kubernetes](https://spiffe.io/docs/latest/try/getting-started-k8s/). However, there are some minor key differences. Take note of the tornjak-configmap.yaml file, which includes configuration details for the Tornjak backend.
-To view the configuration you can issue the following:
+This directory contains configuration files similar to the [SPIRE Kubernetes Quickstart](https://spiffe.io/docs/latest/try/getting-started-k8s/), with additions for Tornjak, such as `tornjak-configmap.yaml`.
 
-```console
+### Review Tornjak Configuration
+
+Inspect the Tornjak backend configuration:
+
+```bash
 cat tornjak-configmap.yaml
 ```
 
-Contents of the configuration for the Tornjak backend should look like:
-
-```
+Example content:
+```yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -91,226 +96,134 @@ metadata:
   namespace: spire
 data:
   server.conf: |
-
     server {
-      # location of SPIRE socket
-      # here, set to default SPIRE socket path
       spire_socket_path = "unix:///tmp/spire-server/private/api.sock"
-
-      # configure HTTP connection to Tornjak server
       http {
         enabled = true
-        port = 10000 # opens at port 10000
+        port = 10000
       }
     }
-
     plugins {
-      DataStore "sql" { # local database plugin
+      DataStore "sql" {
         plugin_data {
           drivername = "sqlite3"
-          filename = "/run/spire/data/tornjak.sqlite3" # stores locally in this file
+          filename = "/run/spire/data/tornjak.sqlite3"
         }
       }
     }
 ```
 
-More information on this config file format can be found in [our config documentation](../config-tornjak-server.md).
+For detailed configuration options, see the [Tornjak configuration documentation](https://github.com/spiffe/tornjak/blob/main/docs/config-tornjak-server.md).
 
-Additionally, we have sample server-statefulset files in the directory `server-statefulset-examples`. We will copy one of them in depending on which deployment scheme you would like.
+### Configure the StatefulSet
 
-### Choosing the Statefulset Deployment
+This tutorial uses a deployment where the Tornjak backend runs as a sidecar container in the same pod as the SPIRE server, sharing a socket for communication. Copy the appropriate StatefulSet configuration:
 
-
-Depending on your use case, you can deploy Tornjak in different configurations. Note we have deprecated support of the use case where parts of Tornjak run on the same container as SPIRE.
-
-Currently, we support the following deployment scheme:
-
-1. Only the Tornjak backend (to make Tornjak API calls)  is run as a separate container on the same pod that exposes only one port (to communicate with the Tornjak backend). This deployment type is fully-supported, has a smaller sidecar image without the frontend components, and ensures that the frontend and backend share no memory.
-
-Using the option below, easily copy in the right server-statefulset file.
-
-<details open><summary><b> 🔴 [Click] For the deployment of only the Tornjak backend (API)</b></summary>
-
-There is an additional requirement to mount the SPIRE server socket and make it accessible to the Tornjak backend container.
-
-The relevant file is called `backend-sidecar-server-statefulset.yaml` within the examples directory.  Please copy to the relevant file as follows:
-
-```console
+```bash
 cp server-statefulset-examples/backend-sidecar-server-statefulset.yaml server-statefulset.yaml
 ```
 
-The statefulset will look something like this, where we have commented leading with a 👈 on the changed or new lines:
+Verify the StatefulSet configuration:
 
-```console
+```bash
 cat server-statefulset.yaml
 ```
 
-```
+Key differences from the SPIRE quickstart:
+- Adds a `tornjak-backend` container using `ghcr.io/spiffe/tornjak-backend:2.1.0`.
+- Mounts a shared `socket` volume for SPIRE and Tornjak communication.
+- Includes a `tornjak-config` volume from the `tornjak-agent` ConfigMap.
+
+Example excerpt:
+```yaml
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: spire-server
   namespace: spire
-  labels:
-    app: spire-server
 spec:
   replicas: 1
   selector:
     matchLabels:
       app: spire-server
-  serviceName: spire-server
   template:
-    metadata:
-      namespace: spire
-      labels:
-        app: spire-server
     spec:
-      serviceAccountName: spire-server
       containers:
         - name: spire-server
-          image: ghcr.io/spiffe/spire-server:1.4.4
+          image: ghcr.io/spiffe/spire-server:1.9.0
           args:
             - -config
             - /run/spire/config/server.conf
-          ports:
-            - containerPort: 8081
           volumeMounts:
-            - name: spire-config
-              mountPath: /run/spire/config
-              readOnly: true
-            - name: spire-data
-              mountPath: /run/spire/data
-              readOnly: false
-            - name: socket                         # 👈 ADDITIONAL VOLUME
-              mountPath: /tmp/spire-server/private # 👈 ADDITIONAL VOLUME
-          livenessProbe:
-            httpGet:
-              path: /live
-              port: 8080
-            failureThreshold: 2
-            initialDelaySeconds: 15
-            periodSeconds: 60
-            timeoutSeconds: 3
-          readinessProbe:
-            httpGet:
-              path: /ready
-              port: 8080
-            initialDelaySeconds: 5
-            periodSeconds: 5
-        ### 👈 BEGIN ADDITIONAL CONTAINER ###
-        - name: tornjak-backend
-          image: ghcr.io/spiffe/tornjak-backend:2.0.0
-          args:
-            - --config
-            - /run/spire/config/server.conf
-            - --tornjak-config
-            - /run/spire/tornjak-config/server.conf
-          ports:
-            - containerPort: 8081
-          volumeMounts:
-            - name: spire-config
-              mountPath: /run/spire/config
-              readOnly: true
-            - name: tornjak-config
-              mountPath: /run/spire/tornjak-config
-              readOnly: true
-            - name: spire-data
-              mountPath: /run/spire/data
-              readOnly: false
             - name: socket
               mountPath: /tmp/spire-server/private
-        ### 👈 END ADDITIONAL CONTAINER ###
+        - name: tornjak-backend
+          image: ghcr.io/spiffe/tornjak-backend:2.1.0
+          args:
+            - --tornjak-config
+            - /run/spire/tornjak-config/server.conf
+          volumeMounts:
+            - name: socket
+              mountPath: /tmp/spire-server/private
       volumes:
-        - name: spire-config
+        - name: socket
+          emptyDir: {}
+        - name: tornjak-config
           configMap:
-            name: spire-server
-        - name: tornjak-config  # 👈 ADDITIONAL VOLUME
-          configMap:            # 👈 ADDITIONAL VOLUME
-            name: tornjak-agent # 👈 ADDITIONAL VOLUME
-        - name: socket          # 👈 ADDITIONAL VOLUME
-          emptyDir: {}          # 👈 ADDITIONAL VOLUME
-  volumeClaimTemplates:
-    - metadata:
-        name: spire-data
-        namespace: spire
-      spec:
-        accessModes:
-          - ReadWriteOnce
-        resources:
-          requests:
-            storage: 1Gi
+            name: tornjak-agent
 ```
 
-Note that there are three key differences in this StatefulSet file from that in the SPIRE quickstart:
+**Security Note**: For production, secure the SQLite database and SPIRE socket with appropriate access controls and consider using a managed database instead of SQLite.
 
-1. There is a new container in the pod named tornjak-backend.
-3. We create a volume named `tornjak-config` that reads from the ConfigMap `tornjak-agent`.
-4. We create a volume named `test-socket` so that the containers may communicate.
+## Step 2: Deploy SPIRE and Tornjak
 
-This is all done specifically to pass the Tornjak config file as an argument to the container and to allow communication between Tornjak and SPIRE.
+Apply the configuration files to deploy SPIRE and Tornjak:
 
-</details>
-
-## Step 2: Deployment of SPIRE and co-located Tornjak
-
-Now that we have the correct deployment files, please follow the below steps to deploy Tornjak and SPIRE!
-
-NOTE: In a Windows OS environment, you will need to replace the backslashes ( \\ ) below with backticks ( \` ) to copy and paste into a Windows terminal. This doesnt apply for Mac.
-```console
-kubectl apply -f spire-namespace.yaml \
-    -f server-account.yaml \
-    -f spire-bundle-configmap.yaml \
-    -f tornjak-configmap.yaml \
-    -f server-cluster-role.yaml \
-    -f server-configmap.yaml \
-    -f server-statefulset.yaml \
-    -f server-service.yaml
+```bash
+kubectl apply -f spire-namespace.yaml -f server-account.yaml -f spire-bundle-configmap.yaml -f tornjak-configmap.yaml -f server-cluster-role.yaml -f server-configmap.yaml -f server-statefulset.yaml -f server-service.yaml
 ```
-The above command should deploy the SPIRE server with Tornjak:
 
+Example output:
 ```
 namespace/spire created
 serviceaccount/spire-server created
 configmap/spire-bundle created
 configmap/tornjak-agent created
-role.rbac.authorization.k8s.io/spire-server-configmap-role created
-rolebinding.rbac.authorization.k8s.io/spire-server-configmap-role-binding created
 clusterrole.rbac.authorization.k8s.io/spire-server-trust-role created
 clusterrolebinding.rbac.authorization.k8s.io/spire-server-trust-role-binding created
 configmap/spire-server created
 statefulset.apps/spire-server created
 service/spire-server created
-service/tornjak-backend-http created
-service/tornjak-backend-tls created
-service/tornjak-backend-mtls created
-service/tornjak-frontend created
 ```
 
-Before continuing, check that the spire-server is ready:
+**Note for Windows Users**: Replace backslashes (`\`) with backticks (`` ` ``) in the `kubectl apply` command for compatibility with Windows terminals:
 
-```console
-kubectl get statefulset --namespace spire
+```bash
+kubectl apply -f spire-namespace.yaml `-f server-account.yaml `-f spire-bundle-configmap.yaml `-f tornjak-configmap.yaml `-f server-cluster-role.yaml `-f server-configmap.yaml `-f server-statefulset.yaml `-f server-service.yaml
+```
+
+Verify the SPIRE server is running:
+
+```bash
+kubectl get statefulset -n spire
 ```
 
 ```
 NAME           READY   AGE
-spire-server   1/1     26s
+spire-server   1/1     30s
 ```
 
-NOTE: You may initially see a `0/1` for READY status. Just wait a few minutes and then try again
+If the status shows `0/1`, wait a few minutes and check again.
 
-### Deploying the agent and creating test entries
+### Deploy the SPIRE Agent
 
-The following steps will configure and deploy the SPIRE agent.
-NOTE: In a windows environment, you will need to replace the backslashes ( \\ ) below with backticks ( \` ) to copy and paste into a windows terminal
-```console
-kubectl apply \
-    -f agent-account.yaml \
-    -f agent-cluster-role.yaml \
-    -f agent-configmap.yaml \
-    -f agent-daemonset.yaml
+Apply the agent configurations:
+
+```bash
+kubectl apply -f agent-account.yaml -f agent-cluster-role.yaml -f agent-configmap.yaml -f agent-daemonset.yaml
 ```
 
+Example output:
 ```
 serviceaccount/spire-agent created
 clusterrole.rbac.authorization.k8s.io/spire-agent-cluster-role created
@@ -319,22 +232,23 @@ configmap/spire-agent created
 daemonset.apps/spire-agent created
 ```
 
-```console
-kubectl get daemonset --namespace spire
+Verify the agent is running:
+
+```bash
+kubectl get daemonset -n spire
 ```
 
 ```
-NAME          DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR   AGE
-spire-agent   1         1         1       1            1           <none>          19s
-
+NAME          DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   AGE
+spire-agent   1         1         1       1            1           20s
 ```
 
-Then, we can create a registration entry for the node.
+### Create Registration Entries
 
-NOTE: In a windows environment, you will need to replace the backslashes ( \\ ) below with backticks ( \` ) to copy and paste into a windows terminal
-```console
-kubectl exec -n spire -c spire-server spire-server-0 -- \
-    /opt/spire/bin/spire-server entry create \
+Register the node:
+
+```bash
+kubectl exec -n spire spire-server-0 -c spire-server -- /opt/spire/bin/spire-server entry create \
     -spiffeID spiffe://example.org/ns/spire/sa/spire-agent \
     -selector k8s_sat:cluster:demo-cluster \
     -selector k8s_sat:agent_ns:spire \
@@ -342,224 +256,214 @@ kubectl exec -n spire -c spire-server spire-server-0 -- \
     -node
 ```
 
+Example output:
 ```
 Entry ID         : 03d0ec2b-54b7-4340-a0b9-d3b2cf1b041a
 SPIFFE ID        : spiffe://example.org/ns/spire/sa/spire-agent
 Parent ID        : spiffe://example.org/spire/server
-Revision         : 0
-TTL              : default
+Selector         : k8s_sat:cluster:demo-cluster
 Selector         : k8s_sat:agent_ns:spire
 Selector         : k8s_sat:agent_sa:spire-agent
-Selector         : k8s_sat:cluster:demo-cluster
 ```
 
-And we create a registration entry for the workload registrar, specifying the workload registrar's SPIFFE ID:
+Register the workload:
 
-NOTE: In a windows environment, you will need to replace the backslashes ( \\ ) below with backticks ( \` ) to copy and paste into a windows terminal
-```console
-kubectl exec -n spire -c spire-server spire-server-0 -- \
-    /opt/spire/bin/spire-server entry create \
+```bash
+kubectl exec -n spire spire-server-0 -c spire-server -- /opt/spire/bin/spire-server entry create \
     -spiffeID spiffe://example.org/ns/default/sa/default \
     -parentID spiffe://example.org/ns/spire/sa/spire-agent \
     -selector k8s:ns:default \
     -selector k8s:sa:default
 ```
 
+Example output:
 ```
 Entry ID         : 11a367ab-7095-4390-ab89-34dea5fddd61
 SPIFFE ID        : spiffe://example.org/ns/default/sa/default
 Parent ID        : spiffe://example.org/ns/spire/sa/spire-agent
-Revision         : 0
-TTL              : default
 Selector         : k8s:ns:default
 Selector         : k8s:sa:default
 ```
 
-Finally, here we deploy a workload container:
+### Deploy a Test Workload
 
-```console
+Deploy a client workload to test the SPIRE Workload API:
+
+```bash
 kubectl apply -f client-deployment.yaml
 ```
-```
-deployment.apps/client created
-```
 
-And also verify that the container can access the workload API UNIX domain socket:
+Verify the workload can fetch an SVID:
 
-```console
-kubectl exec -it $(kubectl get pods -o=jsonpath='{.items[0].metadata.name}' \
-   -l app=client)  -- /opt/spire/bin/spire-agent api fetch -socketPath /run/spire/sockets/agent.sock
+```bash
+kubectl exec -it $(kubectl get pods -o=jsonpath='{.items[0].metadata.name}' -l app=client) -- \
+    /opt/spire/bin/spire-agent api fetch -socketPath /run/spire/sockets/agent.sock
 ```
 
+Example output:
 ```
-Received 1 svid after 8.8537ms
-
-SPIFFE ID:		spiffe://example.org/ns/default/sa/default
-SVID Valid After:	2021-04-06 20:13:02 +0000 UTC
-SVID Valid Until:	2021-04-06 21:13:12 +0000 UTC
-CA #1 Valid After:	2021-04-06 20:12:20 +0000 UTC
-CA #1 Valid Until:	2021-04-07 20:12:30 +0000 UTC
+Received 1 svid after 10ms
+SPIFFE ID: spiffe://example.org/ns/default/sa/default
+SVID Valid After: 2025-04-23 12:00:00 +0000 UTC
+SVID Valid Until: 2025-04-23 13:00:10 +0000 UTC
 ```
 
-Let's verify that the `spire-server-0` pod is now started with the new image:
+Verify the pod images:
 
-```console
+```bash
 kubectl -n spire describe pod spire-server-0 | grep "Image:"
 ```
 
-**or**, on Windows:
-```console
-kubectl -n spire describe pod spire-server-0 | select-string "Image:"
+Example output:
+```
+Image: ghcr.io/spiffe/spire-server:1.9.0
+Image: ghcr.io/spiffe/tornjak-backend:2.1.0
 ```
 
-Should yield two lines depending on which deployment you used:
+## Step 3: Access Tornjak
 
-```
-    Image:         ghcr.io/spiffe/spire-server:1.4.4
-    Image:         <TORNJAK-IMAGE>
-```
+### Step 3a: Access the Tornjak Backend
 
-where `<TORNJAK-IMAGE>` is `ghcr.io/spiffe/tornjak:latest` if you deployed the Tornjak with the UI and is `ghcr.io/spiffe/tornjak-backend:latest` if you deployed only the Tornjak backend.
+Forward the Tornjak backend port to your local machine:
 
-## Step 3: Configuring Access to Tornjak
-
-### Step 3a: Connecting to the Tornjak backend to make Tornjak API calls
-
-The Tornjak HTTP server is running on port 10000 on the pod. This can easily be accessed by performing a local port forward using `kubectl`. This will cause the local port 10000 to proxy to the Tornjak HTTP server.
-
-```console
+```bash
 kubectl -n spire port-forward spire-server-0 10000:10000
 ```
 
-You'll see something like this:
-
+Example output:
 ```
 Forwarding from 127.0.0.1:10000 -> 10000
 Forwarding from [::1]:10000 -> 10000
 ```
 
-While this runs, open a browser to
+Open a browser and navigate to:
 
 ```
 http://localhost:10000/api/v1/tornjak/serverinfo
 ```
 
-This output represents the backend response. Now you should be able to make Tornjak API calls!
+You should see a JSON response with server information, confirming the Tornjak backend is accessible.
 
-![tornjak-agent-browser](../rsrc/tornjak-agent-browser.png)
+### Step 3b: Access the Tornjak Frontend (Optional)
 
-### Step 3b: Connecting to the Tornjak frontend to access the Tornjak UI
+To view the Tornjak UI, run the frontend locally using Docker. Ensure the backend port-forward is active (run `kubectl port-forward` in the background if needed):
 
-Make sure that the backend is accessible from your browser at `http://localhost:10000`, as above, or the frontend will not work.
-- Tip: run kubectl -n spire port-forward spire-server-0 10000:10000 as a background process that way you can access the frontend.
-
-If you chose to deploy Tornjak with the UI, connecting to the UI is very simple. Otherwise, you can always run the UI locally and connect. See the two choices below:
-
-<details open><summary><b> 🔴 [Click] Run the Tornjak frontend locally</b></summary>
-
-You will need to deploy the separate frontend separately to access the exposed Tornjak backend. We have prebuilt the frontend in a container, so we can simply run it via a single docker command in a separate terminal, which will take a couple minutes to run:
-
-```console
-docker run -p 3000:3000 -e REACT_APP_API_SERVER_URI='http://localhost:10000' ghcr.io/spiffe/tornjak-frontend:v2.0.0
+```bash
+kubectl -n spire port-forward spire-server-0 10000:10000 &
 ```
 
-After the image is downloaded, you will eventually see the following output:
+In a new terminal, start the Tornjak frontend container:
 
+```bash
+docker run -p 3000:3000 -e REACT_APP_API_SERVER_URI='http://localhost:10000' ghcr.io/spiffe/tornjak-frontend:2.1.0
+```
+
+Example output:
 ```
 > tornjak-frontend@0.1.0 start
-> react-scripts --openssl-legacy-provider start
-
-ℹ ｢wds｣: Project is running at http://172.17.0.3/
-ℹ ｢wds｣: webpack output is served from
-ℹ ｢wds｣: Content not from webpack is served from /usr/src/app/public
-ℹ ｢wds｣: 404s will fallback to /
-Starting the development server...
+> react-scripts start
 
 Compiled successfully!
-
 You can now view tornjak-frontend in the browser.
-
-  Local:            http://localhost:3000
-  On Your Network:  http://172.17.0.3:3000
-
-Note that the development build is not optimized.
-To create a production build, use npm run build.
+  Local: http://localhost:3000
 ```
 
-Note, it will likely take a few minutes for the applicaiton to compile successfully.
+**Note**: It may take a few minutes for the frontend to compile and start.
 
-</details>
+Open a browser and navigate to:
 
-Either of the above steps exposes the frontend at http://localhost:3000.  If you visit in your browser, you should see this page:
+```
+http://localhost:3000
+```
 
-![tornjak-ui](../rsrc/tornjak-ui.png)
+You should see the Tornjak UI, allowing you to visualize and manage SPIFFE identities.
+
+**Troubleshooting Tip**: If the UI fails to load, ensure the backend is accessible at `http://localhost:10000` and check Docker logs for errors.
 
 ## Cleanup
 
-Here are the steps to clean the deployed entities. First, we delete the workload container:
+Remove the deployed resources:
 
-```terminal
+1. Delete the client workload:
+```bash
 kubectl delete deployment client
 ```
 
-Then, delete the spire agent and server, along with the namespace we created:
-
-```terminal
+2. Delete the SPIRE namespace and its contents:
+```bash
 kubectl delete namespace spire
 ```
 
-NOTE: You may need to wait a few minutes for the action to complete and the prompt to return
-
-Finally, we can delete the ClusterRole and ClusterRoleBinding:
-
-```terminal
+3. Delete cluster-wide roles:
+```bash
 kubectl delete clusterrole spire-server-trust-role spire-agent-cluster-role
 kubectl delete clusterrolebinding spire-server-trust-role-binding spire-agent-cluster-role-binding
 ```
 
+4. Stop Minikube:
+```bash
+minikube stop
+```
+
 ## Troubleshooting
-<details><summary><b>Troubleshoot 1: Minikube fails to start with a Docker CLI context error</b></summary>
 
-When running the `minikube start` command, you might encounter an error like the one below:
+### Minikube Fails to Start
 
+**Symptom**: `minikube start` fails with a Docker-related error, e.g., "Cannot connect to the Docker daemon."
 
-```console
-minikube start
-```
-```
-W1105 15:48:51.730095   42754 main.go:291] Unable to resolve the current Docker CLI context "default": context "default": context not found: open /Users/kidus/.docker/contexts/meta/37a8eec1ce19687d132fe29051dca629d164e2c4958ba141d5f4133a33f0688f/meta.json: no such file or directory
-😄  minikube v1.31.2 on Darwin 14.0 (arm64)
-✨  Using the docker driver based on existing profile
+**Solution**:
+1. Verify Docker is running:
+   - On macOS/Windows, open Docker Desktop or run:
+     ```bash
+     open -a Docker
+     ```
+2. Check Docker context:
+   ```bash
+   docker context ls
+   docker context use default
+   ```
+3. Reset Minikube if needed:
+   ```bash
+   minikube delete
+   minikube start --driver=docker
+   ```
+4. Ensure sufficient resources (e.g., 4GB RAM, 2 CPUs) are allocated to Docker.
 
-💣  Exiting due to PROVIDER_DOCKER_NOT_RUNNING: "docker version --format <no value>-<no value>:<no value>" exit status 1: Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
-💡  Suggestion: Start the Docker service
-📘  Documentation: https://minikube.sigs.k8s.io/docs/drivers/docker/
-```
-This typically means that Docker is not running on your machine, and since Minikube is attempting to use Docker as a driver, it's required to have Docker active.
-Solution:
+### Tornjak Backend Unreachable
 
-1. Check Docker Installation:
--  Make sure Docker is installed on your system. If it's not installed, you can install Docker by following the instructions on the official Docker [installation guide.](https://docs.docker.com/get-docker/)
+**Symptom**: `http://localhost:10000/api/v1/tornjak/serverinfo` returns a connection error.
 
-2. Start Docker:
-- On macOS and Windows: Docker Desktop has a graphical interface to manage the Docker service. Open Docker Desktop to start Docker. Alternativly, run the command '''open -a Docker''''
-3. Retry Starting Minikube:
-- After ensuring that Docker is running, you can start Minikube again using:
-```console
-minikube start
-```
-4. Reset Configurations if Needed:
-- For Docker context issues:
-```console
-docker context ls
-docker context use default
-```
-- To reset Minikube:
-```console
-minikube delete
-```
-- followed by:
-```console
-minikube start
-```
-</details>
+**Solution**:
+1. Verify the port-forward is active:
+   ```bash
+   kubectl -n spire port-forward spire-server-0 10000:10000
+   ```
+2. Check pod status:
+   ```bash
+   kubectl -n spire get pods
+   ```
+3. View pod logs for errors:
+   ```bash
+   kubectl -n spire logs spire-server-0 -c tornjak-backend
+   ```
+
+### Frontend Fails to Load
+
+**Symptom**: The Tornjak UI at `http://localhost:3000` is blank or shows errors.
+
+**Solution**:
+1. Ensure the backend is accessible at `http://localhost:10000`.
+2. Check Docker container logs:
+   ```bash
+   docker ps
+   docker logs <container-id>
+   ```
+3. Restart the frontend container:
+   ```bash
+   docker stop <container-id>
+   docker run -p 3000:3000 -e REACT_APP_API_SERVER_URI='http://localhost:10000' ghcr.io/spiffe/tornjak-frontend:2.1.0
+   ```
+
+For additional help, consult the [SPIRE documentation](https://spiffe.io/docs/latest/) or [Tornjak repository](https://github.com/spiffe/tornjak).
+
+**Production Note**: This tutorial is for demonstration purposes. For production, implement RBAC, network policies, and secure storage for sensitive data.
